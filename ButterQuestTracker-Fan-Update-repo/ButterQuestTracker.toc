@@ -1,0 +1,23 @@
+## Interface: 120100, 120105, 50504, 50503, 40402, 38002, 30405, 20506, 20505, 16001, 16002, 16003, 16004, 16005, 11509, 11508
+## Title: Butter Quest Tracker Fan Update |cFFFFFFFFv1.1.0-forever|r
+## Author: Butter Cookie Kitkat (original author); Fan Update by the community
+## Notes: Unofficial Fan Update of Butter Quest Tracker by Butter Cookie Kitkat. Works on Classic Era, Cata, MoP, Retail and WoW Forever.
+## Version: 1.1.0-forever
+## OptionalDeps: Ace3, Questie, ClassicCodex
+## SavedVariables: ButterQuestTrackerConfig
+## SavedVariablesPerCharacter: ButterQuestTrackerCharacterConfig, ButterQuestTrackerConfigCharacter
+## X-License: MIT
+## IconTexture: Interface\AddOns\ButterQuestTracker\Media\BQT_logo
+
+embeds.xml
+
+# Localization
+Locale\ButterQuestTrackerLocale.lua
+Locale\enUS\locale.xml
+Locale\ruRU\locale.xml
+Locale\zhCN\locale.xml
+
+utilities\constants.lua
+
+ButterQuestTracker.lua
+Options.lua
