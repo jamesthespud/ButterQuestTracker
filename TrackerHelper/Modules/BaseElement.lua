@@ -1,4 +1,4 @@
-local CreateClass = LibStub("Poncho-1.0");
+local CreateClass = LibStub("BQTFrameClass-1.0");
 
 TrackerHelperBaseElement = CreateClass("Frame", "TrackerHelperBaseElement", nil, nil, TrackerHelperBase);
 local BaseElement = TrackerHelperBaseElement;
@@ -70,7 +70,13 @@ function BaseElement:AdjustPosition(x, y)
 
     local parent = self:GetParent();
     if self.previousElement then
-        left = left + parent:GetLeft() - self.previousElement:GetLeft();
+        -- Frames that haven't been laid out yet may not know their position, treat that as "aligned".
+        local parentLeft = parent:GetLeft();
+        local previousLeft = self.previousElement:GetLeft();
+
+        if parentLeft and previousLeft then
+            left = left + parentLeft - previousLeft;
+        end
     end
 
     self:ClearAllPoints();

@@ -1,4 +1,4 @@
-local CreateClass = LibStub("Poncho-1.0");
+local CreateClass = LibStub("BQTFrameClass-1.0");
 
 TrackerHelperBackgroundFrame = CreateClass("Frame", "TrackerHelperBackgroundFrame", nil, nil, TrackerHelperBase);
 local Frame = TrackerHelperBackgroundFrame;

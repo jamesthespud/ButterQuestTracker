@@ -13,7 +13,7 @@ ButterQuestTrackerLocale.locale['zhCN'] = {
 
     -- Settings
 
-    ['SETTINGS_NAME'] = "Butter Quest Tracker |cFFFFFFFFv%s|r",
+    ['SETTINGS_NAME'] = "Butter Quest Tracker Fan Update |cFFFFFFFFv%s|r",
     ['SETTINGS_ENABLED_NAME'] = "启用",
     ['SETTINGS_FORMAT_NAME'] = "格式",
 
@@ -131,5 +131,5 @@ ButterQuestTrackerLocale.locale['zhCN'] = {
 
     ['SETTINGS_RESET_NAME'] = "重置设置",
     ['SETTINGS_RESET_DESC'] = "重置所有的Butter Quest Tracker's设置为默认值。",
-    ['SETTINGS_ADVERT_TEXT'] = "|c00FF9696Butter Quest Tracker正在积极开发魔兽世界:经典怀旧。请查看我们的GitHub的alpha版本或报告问题。 \n\nhttps://github.com/butter-cookie-kitkat/ButterQuestTracker"
+    ['SETTINGS_ADVERT_TEXT'] = "|c00FF9696Butter Quest Tracker Fan Update is an unofficial community update of Butter Quest Tracker, created by Butter Cookie Kitkat (MIT license). Original project: https://github.com/butter-cookie-kitkat/ButterQuestTracker\n\nPlease report problems with this version on this addon's CurseForge page, not to the original author."
 };

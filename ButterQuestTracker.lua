@@ -1,7 +1,6 @@
 local NAME, ns = ...
 
-local isWoWClassic = select(4, GetBuildInfo()) < 20000;
-
+local Compat = LibStub("BQTCompat-1.0");
 local QWH = LibStub("QuestWatchHelper-1.0");
 local QLH = LibStub("QuestLogHelper-1.0");
 local ZH = LibStub("BQTZoneHelper-1.0");
@@ -11,8 +10,29 @@ local BQTL = ButterQuestTrackerLocale;
 ButterQuestTracker = LibStub("AceAddon-3.0"):NewAddon("ButterQuestTracker", "AceEvent-3.0");
 local BQT = ButterQuestTracker;
 
+-- Plays one of Blizzard's UI sounds, quietly doing nothing if the sound kit isn't there.
+local function playSound(name)
+    if SOUNDKIT and SOUNDKIT[name] then
+        pcall(PlaySound, SOUNDKIT[name]);
+    end
+end
+
+-- The dialog's frames have been renamed between client versions (editBox / EditBox / GetEditBox()).
+local function getPopupEditBox(dialog)
+    if dialog.editBox then
+        return dialog.editBox;
+    elseif dialog.EditBox then
+        return dialog.EditBox;
+    elseif type(dialog.GetEditBox) == "function" then
+        return dialog:GetEditBox();
+    elseif dialog.GetName and dialog:GetName() then
+        return _G[dialog:GetName() .. "EditBox"];
+    end
+end
+
 StaticPopupDialogs[NAME .. "_WowheadURL"] = {
-    text = ns.CONSTANTS.PATHS.LOGO .. ns.CONSTANTS.BRAND_COLOR .. " Butter Quest Tracker" .. "|r - Wowhead URL " .. ns.CONSTANTS.PATHS.LOGO,
+    -- The whole text (title + quest name) is passed in as the first argument.
+    text = "%s",
     button2 = CLOSE,
     hasEditBox = true,
     editBoxWidth = 300,
@@ -25,15 +45,14 @@ StaticPopupDialogs[NAME .. "_WowheadURL"] = {
         self:GetParent():Hide()
     end,
 
-    OnShow = function(self)
-        local questID = self.text.text_arg1;
-        local quest = QLH:GetQuest(questID);
-        local name = quest.title;
+    OnShow = function(self, data)
+        local editBox = getPopupEditBox(self);
 
-        self.text:SetText(self.text:GetText() .. "\n\n|cffff7f00" .. name .. "|r");
-        self.editBox:SetText(QLH:GetWowheadURL(questID));
-        self.editBox:SetFocus();
-        self.editBox:HighlightText();
+        if not editBox or not data then return end
+
+        editBox:SetText(Compat:GetWowheadURL(data));
+        editBox:SetFocus();
+        editBox:HighlightText();
     end,
 
     whileDead = true,
@@ -60,6 +79,22 @@ end
 
 function BQT:OnPlayerEnteringWorld()
     self:UnregisterEvent("PLAYER_ENTERING_WORLD");
+
+    -- If anything below blows up the player would be left with no quest tracker at all,
+    -- so in that case hand the Blizzard tracker back.
+    local ok, err = xpcall(function() self:Initialize() end, geterrorhandler());
+
+    if not ok then
+        QWH:RestoreBlizzardTracker();
+
+        print(ns.CONSTANTS.LOGGER.PREFIX .. ns.CONSTANTS.LOGGER.TYPES.ERROR.COLOR, "failed to start, the default quest tracker was restored. Type /bqt status and report the output.");
+    end
+end
+
+function BQT:Initialize()
+    if self.HookOptionsPanels then
+        self:HookOptionsPanels();
+    end
 
     BQTL:SetLocale(BQT.db.global.Locale);
     QWH:OnQuestWatchUpdated(function(questWatchUpdates)
@@ -152,7 +187,14 @@ end
 BQT:RegisterEvent("PLAYER_ENTERING_WORLD", "OnPlayerEnteringWorld")
 
 function BQT:ShowWowheadPopup(id)
-    StaticPopup_Show(NAME .. "_WowheadURL", id)
+    local quest = QLH:GetQuest(id);
+    local title = ns.CONSTANTS.PATHS.LOGO .. ns.CONSTANTS.BRAND_COLOR .. " Butter Quest Tracker Fan Update" .. "|r - Wowhead URL " .. ns.CONSTANTS.PATHS.LOGO;
+
+    if quest and quest.title then
+        title = title .. "\n\n|cffff7f00" .. quest.title .. "|r";
+    end
+
+    StaticPopup_Show(NAME .. "_WowheadURL", title, nil, id);
 end
 
 local function getDistance(x1, y1, x2, y2)
@@ -168,16 +210,12 @@ local function count(t)
 end
 
 local function getWorldPlayerPosition()
-    local uiMapID = C_Map.GetBestMapForUnit("player");
+    return Compat:GetPlayerWorldPosition();
+end
 
-    if not uiMapID then
-        return nil;
-    end
-
-    local mapPosition = C_Map.GetPlayerMapPosition(uiMapID, "player");
-    local _, worldPosition = C_Map.GetWorldPosFromMapPos(uiMapID, mapPosition);
-
-    return worldPosition;
+-- The quest log index can change at any time, always ask for the current one.
+local function currentIndex(quest)
+    return QLH:GetIndexFromQuestID(quest.questID) or quest.index;
 end
 
 local function sortQuestFallback(quest, otherQuest, field, comparator)
@@ -277,11 +315,14 @@ function BQT:RefreshQuestWatch()
 end
 
 function BQT:UpdateQuestWatch(currentZone, minimapZone, quest)
-    if self:ShouldWatchQuest(currentZone, minimapZone, quest) then
-        AddQuestWatch(quest.index);
-    else
-        RemoveQuestWatch(quest.index);
-    end
+    QWH:SetWatched(quest, self:ShouldWatchQuest(currentZone, minimapZone, quest));
+end
+
+-- Untrack a quest by hand (shift click / context menu) and remember that it was the player's choice.
+function BQT:UntrackQuest(quest)
+    self.db.char.MANUALLY_TRACKED_QUESTS[quest.questID] = false;
+    QWH:SetWatched(quest, false);
+    self:RefreshView();
 end
 
 function BQT:ShouldWatchQuest(currentZone, minimapZone, quest)
@@ -305,7 +346,7 @@ function BQT:ShouldWatchQuest(currentZone, minimapZone, quest)
 end
 
 function BQT:GetQuestInfo()
-    if self.db.global.DisplayDummyData and InterfaceOptionsFrame:IsShown() then
+    if self.db.global.DisplayDummyData and self:IsOptionsShown() then
         -- TODO: Move this into QuestLogHelper
         local quests = {
             -- Partially Completed
@@ -461,7 +502,7 @@ function BQT:GetTrackerHeader(visibleQuestCount, questCount)
     if self.db.global.TrackerHeaderFormat == "QuestsNumberVisible" then
         return BQTL:GetString('QT_QUESTS') .. " (" .. visibleQuestCount .. "/" .. questCount .. ")";
     elseif self.db.global.TrackerHeaderFormat == "QuestsNumberVisibleTotal" then
-        return BQTL:GetString('QT_QUESTS') .. " (" .. visibleQuestCount .. "/" .. C_QuestLog.GetMaxNumQuests() .. ")";
+        return BQTL:GetString('QT_QUESTS') .. " (" .. visibleQuestCount .. "/" .. Compat:GetMaxQuests() .. ")";
     end
 
     return BQTL:GetString('QT_QUESTS');
@@ -498,7 +539,36 @@ function BQT:Sort()
     local zoneToOrderMap = {};
     for i, questID in pairs(keys) do
         questIDToOrderMap[questID] = i;
-        zoneToOrderMap[quests[questID].zone] = zoneToOrderMap[quests[questID].zone] or i;
+
+        local zone = quests[questID].zone;
+        if zone then
+            zoneToOrderMap[zone] = zoneToOrderMap[zone] or i;
+        end
+    end
+
+    if self.db.global.ZoneSorting ~= "ByQuestOrder" then
+        -- Stable zone order: the zone you are in first, then the rest alphabetically.
+        local zones = {};
+        for zone in pairs(zoneToOrderMap) do zones[#zones + 1] = zone end
+
+        local currentZone, minimapZone = GetRealZoneText(), GetMinimapZoneText();
+        local function isCurrent(zone) return zone == currentZone or zone == minimapZone end
+
+        table.sort(zones, function(a, b)
+            local aCurrent, bCurrent = isCurrent(a), isCurrent(b);
+
+            if aCurrent ~= bCurrent then return aCurrent end
+
+            local aName, bName = tostring(a):lower(), tostring(b):lower();
+            if aName ~= bName then return aName < bName end
+
+            return tostring(a) < tostring(b);
+        end);
+
+        zoneToOrderMap = {};
+        for rank, zone in ipairs(zones) do
+            zoneToOrderMap[zone] = rank;
+        end
     end
 
     for _, element in pairs(self.questContainers) do
@@ -590,14 +660,9 @@ function BQT:RefreshView()
                     OnButterMouseUp = function(button)
                         if button == "LeftButton" then
                             self.hiddenContainers["QUESTS"] = self.questsContainer:ToggleHidden() or nil;
-                            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON);
+                            playSound("IG_MAINMENU_OPTION_CHECKBOX_ON");
                         else
-                            if InterfaceOptionsFrame:IsShown() then
-                                InterfaceOptionsFrame:Hide();
-                            else
-                                InterfaceOptionsFrame:Show();
-                                InterfaceOptionsFrame_OpenToCategory("ButterQuestTracker");
-                            end
+                            self:ToggleOptions();
                         end
                     end
                 }
@@ -637,7 +702,7 @@ function BQT:RefreshView()
                         events = {
                             OnMouseUp = function()
                                 self.hiddenContainers["Z-" .. quest.zone] = zoneContainers[quest.zone]:ToggleHidden() or nil;
-                                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON);
+                                playSound("IG_MAINMENU_OPTION_CHECKBOX_ON");
                             end
                         }
                     })
@@ -680,19 +745,14 @@ function BQT:RefreshView()
                 OnMouseUp = function(button)
                     if button == "LeftButton" then
                         if IsShiftKeyDown() then
-                            self.db.char.MANUALLY_TRACKED_QUESTS[quest.questID] = false;
-                            RemoveQuestWatch(quest.index);
-                            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON);
+                            playSound("IG_MAINMENU_OPTION_CHECKBOX_ON");
+                            self:UntrackQuest(quest);
                         elseif IsAltKeyDown() then
                             self:ShowWowheadPopup(quest.questID);
                         elseif IsControlKeyDown() then
-                            if isWoWClassic then
-                                ChatEdit_InsertLink("[" .. quest.title .. "]");
-                            else
-                                ChatEdit_InsertLink(GetQuestLink(quest.questID));
-                            end
+                            ChatEdit_InsertLink(Compat:GetQuestChatLink(quest));
                         else
-                            QLH:ToggleQuest(quest.index);
+                            QLH:ToggleQuest(currentIndex(quest));
                         end
                     else
                         self:ToggleContextMenu(quest);
@@ -703,7 +763,7 @@ function BQT:RefreshView()
                     GameTooltip:SetOwner(target, "ANCHOR_NONE");
                     GameTooltip:SetPoint("RIGHT", target, "LEFT");
                     GameTooltip:AddLine(quest.title .. "\n", NORMAL_FONT_COLOR.r, NORMAL_FONT_COLOR.g, NORMAL_FONT_COLOR.b, true);
-                    GameTooltip:AddLine(quest.summary, HIGHLIGHT_FONT_COLOR.r, HIGHLIGHT_FONT_COLOR.g, HIGHLIGHT_FONT_COLOR.b, true);
+                    GameTooltip:AddLine(quest.summary or "", HIGHLIGHT_FONT_COLOR.r, HIGHLIGHT_FONT_COLOR.g, HIGHLIGHT_FONT_COLOR.b, true);
 
                     if self.db.global.DeveloperMode then
                         GameTooltip:AddDoubleLine("\nQuest ID:", quest.questID, HIGHLIGHT_FONT_COLOR.r, HIGHLIGHT_FONT_COLOR.g, HIGHLIGHT_FONT_COLOR.b, HIGHLIGHT_FONT_COLOR.r, HIGHLIGHT_FONT_COLOR.g, HIGHLIGHT_FONT_COLOR.b);
@@ -740,15 +800,18 @@ function BQT:RefreshView()
         local objectiveCount = count(quest.objectives);
 
         if objectiveCount == 0 then
-            self.tracker:Font({
-                label = ' - ' .. quest.summary,
-                size = self.db.global.ObjectiveFontSize,
-                color = self.db.global.ObjectiveFontColor,
-                container = questContainer,
-                margin = {
-                    bottom = 2.5
-                }
-            });
+            -- Not every client can tell us the quest's objective text, in which case there is nothing to show.
+            if quest.summary and quest.summary ~= "" then
+                self.tracker:Font({
+                    label = ' - ' .. quest.summary,
+                    size = self.db.global.ObjectiveFontSize,
+                    color = self.db.global.ObjectiveFontColor,
+                    container = questContainer,
+                    margin = {
+                        bottom = 2.5
+                    }
+                });
+            end
         elseif quest.completed then
             self.tracker:Font({
                 label = ' - ' .. BQTL:GetString('QT_READY_TO_TURN_IN'),
@@ -788,9 +851,59 @@ function BQT:RefreshView()
     self:Sort();
 end
 
+-- Right click menu for a quest. Retail style clients use the new Menu API, older ones UIDropDownMenu.
 function BQT:ToggleContextMenu(quest)
+    if MenuUtil and type(MenuUtil.CreateContextMenu) == "function" then
+        if pcall(self.ShowContextMenu, self, quest) then
+            return;
+        end
+    end
+
+    self:ShowLegacyContextMenu(quest);
+end
+
+function BQT:ShowContextMenu(quest)
+    MenuUtil.CreateContextMenu(UIParent, function(_, root)
+        root:CreateTitle(quest.title);
+
+        root:CreateButton(BQTL:GetString('QT_UNTRACK_QUEST'), function()
+            self:UntrackQuest(quest);
+        end);
+
+        root:CreateButton(BQTL:GetString('QT_VIEW_QUEST'), function()
+            QLH:ToggleQuest(currentIndex(quest));
+        end);
+
+        root:CreateButton(BQTL:GetString('QT_WOWHEAD_URL'), function()
+            BQT:ShowWowheadPopup(quest.questID);
+        end);
+
+        local share = root:CreateButton(BQTL:GetString('QT_SHARE_QUEST'), function()
+            Compat:ShareQuest(quest.questID, currentIndex(quest));
+        end);
+
+        if share and share.SetEnabled and (not UnitInParty("player") or not quest.sharable) then
+            share:SetEnabled(false);
+        end
+
+        root:CreateButton(BQTL:GetString('QT_CANCEL_QUEST'), function()
+            playSound("IG_MAINMENU_OPTION_CHECKBOX_ON");
+        end);
+
+        root:CreateDivider();
+
+        root:CreateButton("|cffff0000" .. BQTL:GetString('QT_ABANDON_QUEST') .. "|r", function()
+            Compat:AbandonQuest(quest.questID, currentIndex(quest));
+            playSound("IG_QUEST_LOG_ABANDON_QUEST");
+        end);
+    end);
+end
+
+function BQT:ShowLegacyContextMenu(quest)
+    if not UIDropDownMenu_Initialize or not ToggleDropDownMenu then return end
+
     if not self.contextMenu then
-        self.contextMenu = CreateFrame("Frame", "WPDemoContextMenu", UIParent, "UIDropDownMenuTemplate");
+        self.contextMenu = CreateFrame("Frame", "BQTContextMenu", UIParent, "UIDropDownMenuTemplate");
     end
 
     local isActive = UIDROPDOWNMENU_OPEN_MENU == self.contextMenu;
@@ -799,8 +912,10 @@ function BQT:ToggleContextMenu(quest)
     self.contextMenu.quest = quest;
 
     UIDropDownMenu_Initialize(self.contextMenu, function()
+        local menuQuest = self.contextMenu.quest;
+
         UIDropDownMenu_AddButton({
-            text = self.contextMenu.quest.title,
+            text = menuQuest.title,
             notCheckable = true,
             isTitle = true
         });
@@ -809,8 +924,7 @@ function BQT:ToggleContextMenu(quest)
             text = BQTL:GetString('QT_UNTRACK_QUEST'),
             notCheckable = true,
             func = function()
-                self.db.char.MANUALLY_TRACKED_QUESTS[self.contextMenu.quest.questID] = false;
-                RemoveQuestWatch(self.contextMenu.quest.index);
+                self:UntrackQuest(menuQuest);
             end
         });
 
@@ -818,7 +932,7 @@ function BQT:ToggleContextMenu(quest)
             text = BQTL:GetString('QT_VIEW_QUEST'),
             notCheckable = true,
             func = function()
-                QLH:ToggleQuest(self.contextMenu.quest.index);
+                QLH:ToggleQuest(currentIndex(menuQuest));
             end
         });
 
@@ -826,16 +940,16 @@ function BQT:ToggleContextMenu(quest)
             text = BQTL:GetString('QT_WOWHEAD_URL'),
             notCheckable = true,
             func = function()
-                BQT:ShowWowheadPopup(self.contextMenu.quest.questID);
+                BQT:ShowWowheadPopup(menuQuest.questID);
             end
         });
 
         UIDropDownMenu_AddButton({
             text = BQTL:GetString('QT_SHARE_QUEST'),
             notCheckable = true,
-            disabled = not UnitInParty("player") or not self.contextMenu.quest.sharable,
+            disabled = not UnitInParty("player") or not menuQuest.sharable,
             func = function()
-                QLH:ShareQuest(self.contextMenu.quest.index);
+                Compat:ShareQuest(menuQuest.questID, currentIndex(menuQuest));
             end
         });
 
@@ -843,7 +957,7 @@ function BQT:ToggleContextMenu(quest)
             text = BQTL:GetString('QT_CANCEL_QUEST'),
             notCheckable = true,
             func = function()
-                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON);
+                playSound("IG_MAINMENU_OPTION_CHECKBOX_ON");
             end
         });
 
@@ -856,8 +970,8 @@ function BQT:ToggleContextMenu(quest)
             notCheckable = true,
             colorCode = "|cffff0000",
             func = function()
-                QLH:AbandonQuest(self.contextMenu.quest.index);
-                PlaySound(SOUNDKIT.IG_QUEST_LOG_ABANDON_QUEST);
+                Compat:AbandonQuest(menuQuest.questID, currentIndex(menuQuest));
+                playSound("IG_QUEST_LOG_ABANDON_QUEST");
             end
         });
     end, "MENU");
@@ -867,8 +981,29 @@ function BQT:ToggleContextMenu(quest)
         CloseDropDownMenus();
     else
         ToggleDropDownMenu(1, nil, self.contextMenu, "cursor", 0, -3);
-        PlaySound(SOUNDKIT.IG_MAINMENU_OPEN);
+        playSound("IG_MAINMENU_OPEN");
     end
+end
+
+-- /bqt status: everything needed to work out why the addon misbehaves on a given client.
+function BQT:PrintStatus()
+    local prefix = ns.CONSTANTS.LOGGER.PREFIX .. ns.CONSTANTS.LOGGER.TYPES.INFO.COLOR;
+
+    print(prefix, "Version " .. tostring(ns.CONSTANTS.VERSION));
+
+    for _, line in ipairs(Compat:Describe()) do
+        print(prefix, line);
+    end
+
+    local watched = 0;
+    for questID in pairs(QLH:GetQuests()) do
+        if QWH:IsWatched(questID) then
+            watched = watched + 1;
+        end
+    end
+
+    print(prefix, "Quests found: " .. QLH:GetQuestCount() .. ", tracked: " .. watched);
+    print(prefix, "Quest helper addons: " .. (#QH:GetActiveAddons() > 0 and table.concat(QH:GetActiveAddons(), ", ") or "none"));
 end
 
 function BQT:ResetOverrides()

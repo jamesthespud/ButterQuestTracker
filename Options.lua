@@ -441,6 +441,24 @@ LibStub("AceConfig-3.0"):RegisterOptionsTable("ButterQuestTracker", function()
                                 set = SetAndRefreshView
                             },
 
+                            zoneSorting = {
+                                name = "Zone Order",
+                                desc = "Current zone first, then A-Z keeps the groups in a steady order. \"By quest order\" puts zones in the order of their first quest under your chosen sorting.",
+                                arg = "ZoneSorting",
+                                type = "select",
+                                width = 1.5,
+                                order = order(),
+
+                                values = {
+                                    CurrentThenAlphabetical = "Current zone first, then A-Z",
+                                    ByQuestOrder = "By quest order"
+                                },
+
+                                set = SetAndRefreshView,
+
+                                disabled = function() return not BQT.db.global.ZoneHeaderEnabled end
+                            },
+
                             spacer2 = Spacer(),
 
                             fontSize = {
@@ -927,31 +945,117 @@ LibStub("AceConfig-3.0"):RegisterOptionsTable("ButterQuestTracker", function()
         },
     }
 end);
-ACD:AddToBlizOptions("ButterQuestTracker");
+-- ---------------------------------------------------------------------------
+-- Showing the options
+--
+-- Current clients use the Settings panel, older ones the Interface Options window. If neither
+-- can host the options we fall back to AceConfigDialog's own stand alone window.
+-- ---------------------------------------------------------------------------
 
-InterfaceOptionsFrame:HookScript("OnShow", function()
-    if BQT.db.global.DisplayDummyData then
-        BQT:RefreshView();
-    end
-end);
+local optionsCategoryID;
+do
+    local ok, _, categoryID = pcall(ACD.AddToBlizOptions, ACD, "ButterQuestTracker");
 
-InterfaceOptionsFrame:HookScript("OnHide", function()
-    if BQT.db.global.DisplayDummyData then
-        BQT:RefreshView();
+    if ok then
+        optionsCategoryID = categoryID;
     end
-end);
+end
+
+local PANEL_NAMES = { "SettingsPanel", "InterfaceOptionsFrame" };
+
+local function isPanelShown(name)
+    local panel = _G[name];
+
+    return panel ~= nil and type(panel.IsShown) == "function" and panel:IsShown();
+end
+
+local function hidePanel(name)
+    local panel = _G[name];
+
+    if not panel then return end
+
+    if type(HideUIPanel) == "function" and pcall(HideUIPanel, panel) and not panel:IsShown() then
+        return;
+    end
+
+    panel:Hide();
+end
+
+-- When "display dummy data" is on, the tracker shows sample quests while the options are open.
+local hookedPanels = {};
+function BQT:HookOptionsPanels()
+    for _, name in ipairs(PANEL_NAMES) do
+        local panel = _G[name];
+
+        if panel and not hookedPanels[name] and type(panel.HookScript) == "function" then
+            hookedPanels[name] = true;
+
+            local function refresh()
+                if BQT.db and BQT.db.global.DisplayDummyData and BQT.tracker then
+                    BQT:RefreshView();
+                end
+            end
+
+            panel:HookScript("OnShow", refresh);
+            panel:HookScript("OnHide", refresh);
+        end
+    end
+end
+BQT:HookOptionsPanels();
+
+function BQT:IsOptionsShown()
+    for _, name in ipairs(PANEL_NAMES) do
+        if isPanelShown(name) then
+            return true;
+        end
+    end
+
+    return ACD.OpenFrames ~= nil and ACD.OpenFrames["ButterQuestTracker"] ~= nil;
+end
+
+function BQT:ToggleOptions()
+    if self:IsOptionsShown() then
+        for _, name in ipairs(PANEL_NAMES) do
+            if isPanelShown(name) then
+                hidePanel(name);
+            end
+        end
+
+        pcall(ACD.Close, ACD, "ButterQuestTracker");
+
+        return;
+    end
+
+    if optionsCategoryID and Settings and type(Settings.OpenToCategory) == "function" then
+        if pcall(Settings.OpenToCategory, optionsCategoryID) then
+            return;
+        end
+    end
+
+    if optionsCategoryID and not Settings and type(InterfaceOptionsFrame_OpenToCategory) == "function" then
+        -- Called twice on purpose, the first call only opens the window on old clients.
+        InterfaceOptionsFrame_OpenToCategory("ButterQuestTracker");
+        InterfaceOptionsFrame_OpenToCategory("ButterQuestTracker");
+
+        return;
+    end
+
+    ACD:Open("ButterQuestTracker");
+end
 
 -- Handling ButterQuestTracker's options.
 SLASH_BUTTER_QUEST_TRACKER_COMMAND1 = '/bqt'
 SlashCmdList['BUTTER_QUEST_TRACKER_COMMAND'] = function(command)
-    if command == "" then
-        if InterfaceOptionsFrame:IsShown() then
-            InterfaceOptionsFrame:Hide();
-        else
-            InterfaceOptionsFrame:Show();
-            InterfaceOptionsFrame_OpenToCategory("ButterQuestTracker");
-        end
+    command = (command or ""):match("^%s*(.-)%s*$"):lower();
+
+    if command == "" or command == "options" or command == "config" then
+        BQT:ToggleOptions();
     elseif command == "reset" then
-        print('command', command);
+        BQT:ResetOverrides();
+        print(ns.CONSTANTS.LOGGER.PREFIX .. ns.CONSTANTS.LOGGER.TYPES.INFO.COLOR, "Tracking overrides were reset.");
+    elseif command == "status" or command == "debug" then
+        BQT:PrintStatus();
+    else
+        print(ns.CONSTANTS.LOGGER.PREFIX .. ns.CONSTANTS.LOGGER.TYPES.INFO.COLOR, "Usage: /bqt [options | reset | status]");
     end
 end

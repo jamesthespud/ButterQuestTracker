@@ -37,6 +37,8 @@ function ButterQuestTrackerLocale:GetStringWrap(key)
     end
 end
 
+local unpack = unpack or table.unpack;
+
 function ButterQuestTrackerLocale:GetString(key, ...)
     if not key then return end
 
@@ -46,18 +48,21 @@ function ButterQuestTrackerLocale:GetString(key, ...)
     end
 
     local dictionary = self.locale[lang];
+    local template = dictionary[key] or (self.locale['enUS'] and self.locale['enUS'][key]);
 
-    if dictionary[key] then
-        -- convert all args to strings
-        local arg = {...};
-        for i, v in ipairs(arg) do
-            arg[i] = tostring(v);
-        end
-
-        return string.format(dictionary[key], unpack(arg));
-    elseif self.locale['enUS'][key] then
-        return string.format(self.locale['enUS'][key], unpack(arg));
-    else
+    if not template then
         return tostring(key) .. ' ERROR: ' .. lang .. ' key missing!';
     end
+
+    -- convert all args to strings
+    local count = select("#", ...);
+    local args = { ... };
+    for i = 1, count do
+        args[i] = tostring(args[i]);
+    end
+
+    local ok, result = pcall(string.format, template, unpack(args, 1, count));
+
+    -- A broken translation shouldn't take the whole options window down with it.
+    return ok and result or template;
 end

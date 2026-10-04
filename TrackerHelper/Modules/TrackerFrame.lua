@@ -1,4 +1,4 @@
-local CreateClass = LibStub("Poncho-1.0");
+local CreateClass = LibStub("BQTFrameClass-1.0");
 
 TrackerHelperFrame = CreateClass("Frame", "TrackerHelperFrame", nil, nil, TrackerHelperBase);
 local Frame = TrackerHelperFrame;
@@ -147,23 +147,35 @@ function Frame:SetBackgroundColor(backgroundColor)
     self.background:SetBackgroundColor(backgroundColor);
 end
 
+-- Offset of our top right corner from UIParent's top right corner (what SetPosition expects).
 function Frame:GetPosition()
     local x = self:GetRight();
     local y = self:GetTop();
 
-    local inversedX = x - GetScreenWidth();
-    local inversedY = y - GetScreenHeight();
+    local parentRight = UIParent:GetRight() or GetScreenWidth();
+    local parentTop = UIParent:GetTop() or GetScreenHeight();
 
-    return inversedX, inversedY;
+    -- Frames that haven't been laid out yet report nothing, fall back to the last known spot.
+    if not (x and y and parentRight and parentTop) then
+        if self.position then
+            return self.position.x, self.position.y;
+        end
+
+        return nil, nil;
+    end
+
+    return x - parentRight, y - parentTop;
 end
 
 function Frame:SetPosition(x, y)
+    local current = self.position or { x = 0, y = 0 };
+
     if x == nil then
-        x = self.position.x;
+        x = current.x;
     end
 
     if y == nil then
-        y = self.position.y;
+        y = current.y;
     end
 
     self:ClearAllPoints();
@@ -189,9 +201,11 @@ end
 -- Events
 
 function Frame:OnMouseWheel(value)
-    local _, _, _, _, y = self.content:GetPoint("TOP");
+    -- The first anchor of the content is always its "TOP" point. (GetPoint wants an index,
+    -- passing a point name only ever worked by accident.)
+    local _, _, _, _, y = self.content:GetPoint(1);
 
-    self.content:SetPoint("TOP", self, 0, y + 10 * -value);
+    self.content:SetPoint("TOP", self, 0, (y or 0) + 10 * -value);
 
     self:_clampScroll(self.content);
 end
@@ -201,9 +215,15 @@ end
 function Frame:_clampScroll()
     local parent = self.content:GetParent();
 
-    if self.content:GetTop() < parent:GetTop() then
+    local contentTop, contentBottom = self.content:GetTop(), self.content:GetBottom();
+    local parentTop, parentBottom = parent:GetTop(), parent:GetBottom();
+
+    -- Nothing to clamp until the frames have been laid out.
+    if not (contentTop and contentBottom and parentTop and parentBottom) then return end
+
+    if contentTop < parentTop then
         self.content:SetPoint("TOP", parent, 0, 0);
-    elseif self.content:GetBottom() > parent:GetBottom() then
+    elseif contentBottom > parentBottom then
         self.content:SetPoint("TOP", parent, 0, self.content:GetHeight() - parent:GetHeight());
     end
 end

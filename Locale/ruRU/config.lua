@@ -13,7 +13,7 @@ ButterQuestTrackerLocale.locale['ruRU'] = {
 
     -- Settings
 
-    ['SETTINGS_NAME'] = "Butter Quest Tracker |cFFFFFFFFv%s|r",
+    ['SETTINGS_NAME'] = "Butter Quest Tracker Fan Update |cFFFFFFFFv%s|r",
     ['SETTINGS_ENABLED_NAME'] = "Включить",
     ['SETTINGS_FORMAT_NAME'] = "Формат",
 
@@ -131,5 +131,5 @@ ButterQuestTrackerLocale.locale['ruRU'] = {
 
     ['SETTINGS_RESET_NAME'] = "Сбросить настройки",
     ['SETTINGS_RESET_DESC'] = "Сброс всех настроек Butter Quest Tracker до значений по умолчанию.",
-    ['SETTINGS_ADVERT_TEXT'] = "|c00FF9696Butter Quest Tracker is under active development for World of Warcraft: Classic. Please check out our GitHub for the alpha builds or to report issues. \n\nhttps://github.com/butter-cookie-kitkat/ButterQuestTracker"
+    ['SETTINGS_ADVERT_TEXT'] = "|c00FF9696Butter Quest Tracker Fan Update is an unofficial community update of Butter Quest Tracker, created by Butter Cookie Kitkat (MIT license). Original project: https://github.com/butter-cookie-kitkat/ButterQuestTracker\n\nPlease report problems with this version on this addon's CurseForge page, not to the original author."
 };

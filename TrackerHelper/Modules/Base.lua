@@ -1,4 +1,4 @@
-local CreateClass = LibStub("Poncho-1.0");
+local CreateClass = LibStub("BQTFrameClass-1.0");
 
 TrackerHelperBase = CreateClass("Frame", "TrackerHelperBase");
 local Base = TrackerHelperBase;

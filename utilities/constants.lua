@@ -1,8 +1,25 @@
 local NAME, ns = ...
 
+local FALLBACK_VERSION = "1.0.0-forever";
+local function getVersion()
+    local getter = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata;
+    local ok, version = false, nil;
+
+    if type(getter) == "function" then
+        ok, version = pcall(getter, NAME, "Version");
+    end
+
+    -- "@project-version@" is what the CurseForge packager would have replaced.
+    if ok and type(version) == "string" and version ~= "" and not version:find("@", 1, true) then
+        return version;
+    end
+
+    return FALLBACK_VERSION;
+end
+
 local CONSTANTS = {
-    VERSION = "@project-version@",
-    NAME = "Butter Quest Tracker",
+    VERSION = getVersion(),
+    NAME = "Butter Quest Tracker Fan Update",
     NAME_SQUASHED = "ButterQuestTracker",
     CURSEFORGE_SLUG = "butter-quest-tracker",
     BRAND_COLOR = "|c00FF9696",
@@ -42,7 +59,8 @@ CONSTANTS.DB_DEFAULTS = {
 
         -- Visuals > Zone Header Font Settings
 
-        ZoneHeaderEnabled = false,
+        ZoneHeaderEnabled = true,
+        ZoneSorting = "CurrentThenAlphabetical",
         ZoneHeaderFontSize = 12,
         ZoneHeaderFontColor = "FFD100",
 

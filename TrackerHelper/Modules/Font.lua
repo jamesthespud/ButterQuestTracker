@@ -1,4 +1,4 @@
-local CreateClass = LibStub("Poncho-1.0");
+local CreateClass = LibStub("BQTFrameClass-1.0");
 
 TrackerHelperFont = CreateClass("Frame", "TrackerHelperFont", nil, nil, TrackerHelperBaseElement);
 local Font = TrackerHelperFont;
@@ -36,7 +36,12 @@ end
 function Font:SetSize(size)
     if not size then return end
 
-    self.font:SetFont(self.font:GetFont(), size);
+    local path, _, flags = self.font:GetFont();
+
+    if path then
+        self.font:SetFont(path, size, flags);
+    end
+
     self:SetHeight(self.font:GetHeight());
 end
 
